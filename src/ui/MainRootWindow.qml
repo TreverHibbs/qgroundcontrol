@@ -75,15 +75,15 @@ ApplicationWindow {
     //-------------------------------------------------------------------------
     //-- Global Scope Variables
 
-    /// Current active Vehicle
     property var                activeVehicle:                  QGroundControl.multiVehicleManager.activeVehicle
     property string             formatedMessage:                activeVehicle ? activeVehicle.formatedMessage : ""
     /// Indicates usable height between toolbar and footer
     property real               availableHeight:                mainWindow.height - mainWindow.header.height - mainWindow.footer.height
 
-    property var                currentPlanMissionItem:         planMasterControllerPlanView ? planMasterControllerPlanView.missionController.currentPlanViewItem : null
     property var                planMasterControllerPlanView:   null
-    property var                planMasterControllerFlyView:    null
+    property var                currentPlanMissionItem:         planMasterControllerPlanView ? planMasterControllerPlanView.missionController.currentPlanViewItem : null
+    property var                planMasterControllerFlyView:    flightView.planController
+    property var                guidedControllerFlyView:        flightView.guidedController
 
     readonly property string    navButtonWidth:                 ScreenTools.defaultFontPixelWidth * 24
     readonly property real      defaultTextHeight:              ScreenTools.defaultFontPixelHeight
@@ -196,52 +196,18 @@ ApplicationWindow {
     readonly property int showDialogDefaultWidth:   40  ///< Use for default dialog width
 
     function showComponentDialog(component, title, charWidth, buttons) {
-        if (mainWindowDialog.visible) {
-            console.warn(("showComponentDialog called while dialog is already visible"))
-            return
-        }
         var dialogWidth = charWidth === showDialogFullWidth ? mainWindow.width : ScreenTools.defaultFontPixelWidth * charWidth
-        mainWindowDialog.width = dialogWidth
-        mainWindowDialog.dialogComponent = component
-        mainWindowDialog.dialogTitle = title
-        mainWindowDialog.dialogButtons = buttons
+        var dialog = dialogDrawerComponent.createObject(mainWindow, { width: dialogWidth, dialogComponent: component, dialogTitle: title, dialogButtons: buttons })
         mainWindow.pushPreventViewSwitch()
-        mainWindowDialog.open()
-        if (buttons & StandardButton.Cancel || buttons & StandardButton.Close || buttons & StandardButton.Discard || buttons & StandardButton.Abort || buttons & StandardButton.Ignore) {
-            mainWindowDialog.closePolicy = Popup.NoAutoClose;
-            mainWindowDialog.interactive = false;
-        } else {
-            mainWindowDialog.closePolicy = Popup.CloseOnEscape | Popup.CloseOnPressOutside;
-            mainWindowDialog.interactive = true;
-        }
+        dialog.open()
     }
 
-    Drawer {
-        id:             mainWindowDialog
-        y:              mainWindow.header.height
-        height:         mainWindow.height - mainWindow.header.height
-        edge:           Qt.RightEdge
-        interactive:    false
-        background: Rectangle {
-            color:  qgcPal.windowShadeDark
-        }
-        property var    dialogComponent: null
-        property var    dialogButtons: null
-        property string dialogTitle: ""
-        Loader {
-            id:             dlgLoader
-            anchors.fill:   parent
-            onLoaded: {
-                item.setupDialogButtons()
-            }
-        }
-        onOpened: {
-            dlgLoader.source = "QGCViewDialogContainer.qml"
-        }
-        onClosed: {
-            //console.log("View switch ok")
-            mainWindow.popPreventViewSwitch()
-            dlgLoader.source = ""
+    Component {
+        id: dialogDrawerComponent
+        QGCViewDialogContainer {
+            y:          mainWindow.header.height
+            height:     mainWindow.height - mainWindow.header.height
+            onClosed:   mainWindow.popPreventViewSwitch()
         }
     }
 
@@ -359,6 +325,164 @@ ApplicationWindow {
         visible: QGroundControl.settingsManager.flyViewSettings.showLogReplayStatusBar.rawValue
     }
 
+    Drawer {
+        id:             viewSelectDrawer
+        height:         mainWindow.height
+        edge:           Qt.LeftEdge
+        interactive:    true
+        dragMargin:     0
+        visible:        false
+
+        property var    _mainWindow:       mainWindow
+        property real   _toolButtonHeight: ScreenTools.defaultFontPixelHeight * 3
+
+        Rectangle {
+            width:  mainLayout.width + (mainLayout.anchors.margins * 2)
+            height: parent.height
+            color:  qgcPal.window
+
+            QGCFlickable {
+                anchors.top:        parent.top
+                anchors.bottom:     qgcVersionLayout.top
+                anchors.left:       parent.left
+                anchors.right:      parent.right
+                contentHeight:      mainLayout.height + (mainLayout.anchors.margins * 2)
+                flickableDirection: QGCFlickable.VerticalFlick
+
+                ColumnLayout {
+                    id:                 mainLayout
+                    anchors.margins:    ScreenTools.defaultFontPixelWidth
+                    anchors.left:       parent.left
+                    anchors.top:        parent.top
+                    spacing:            ScreenTools.defaultFontPixelWidth
+
+                    SubMenuButton {
+                        id:                 flyButton
+                        height:             viewSelectDrawer._toolButtonHeight
+                        Layout.fillWidth:   true
+                        text:               qsTr("Fly View")
+                        imageResource:      "/qmlimages/PaperPlane.svg"
+                        imageColor:         qgcPal.text
+                        onClicked: {
+                            if (toolbar.viewButtonClicked(this)) {
+                                mainWindow.showFlyView()
+                            }
+                        }
+
+                    }
+
+                    SubMenuButton {
+                        id:                 planButton
+                        height:             viewSelectDrawer._toolButtonHeight
+                        Layout.fillWidth:   true
+                        text:               qsTr("Plan View")
+                        imageResource:      "/qmlimages/Plan.svg"
+                        imageColor:         qgcPal.text
+                        onClicked: {
+                            if (toolbar.viewButtonClicked(this)) {
+                                mainWindow.showPlanView()
+                            }
+                        }
+                    }
+
+                    SubMenuButton {
+                        id:                 analyzeButton
+                        height:             viewSelectDrawer._toolButtonHeight
+                        Layout.fillWidth:   true
+                        text:               qsTr("Analyze Tools")
+                        imageResource:      "/qmlimages/Analyze.svg"
+                        imageColor:         qgcPal.text
+                        visible:            QGroundControl.corePlugin.showAdvancedUI
+                        onClicked: {
+                            if (toolbar.viewButtonClicked(this)) {
+                                mainWindow.showAnalyzeView()
+                            }
+                        }
+                    }
+
+                    SubMenuButton {
+                        id:                 setupButton
+                        height:             viewSelectDrawer._toolButtonHeight
+                        Layout.fillWidth:   true
+                        text:               qsTr("Vehicle Setup")
+                        imageColor:         qgcPal.text
+                        imageResource:      "/qmlimages/Gears.svg"
+                        onClicked: {
+                            if (toolbar.viewButtonClicked(this)) {
+                                mainWindow.showSetupView()
+                            }
+                        }
+                    }
+
+                    SubMenuButton {
+                        id:                 settingsButton
+                        height:             viewSelectDrawer._toolButtonHeight
+                        Layout.fillWidth:   true
+                        text:               qsTr("Application Settings")
+                        imageResource:      "/res/QGCLogoFull"
+                        imageColor:         "transparent"
+                        visible:            !QGroundControl.corePlugin.options.combineSettingsAndSetup
+                        onClicked: {
+                            if (toolbar.viewButtonClicked(this)) {
+                                mainWindow.showSettingsView()
+                            }
+                        }
+                    }
+                }
+            }
+
+            ColumnLayout {
+                id:             qgcVersionLayout
+                anchors.left:   parent.left
+                anchors.right:  parent.right
+                anchors.bottom: parent.bottom
+                spacing:        0
+
+                QGCLabel {
+                    text:                   qsTr("%1 Version").arg(QGroundControl.appName)
+                    font.pointSize:         ScreenTools.smallFontPointSize
+                    wrapMode:               QGCLabel.WordWrap
+                    Layout.maximumWidth:    parent.width
+                    Layout.alignment:       Qt.AlignHCenter
+                }
+                QGCLabel {
+                    text:                   QGroundControl.qgcVersion
+                    font.pointSize:         ScreenTools.smallFontPointSize
+                    wrapMode:               QGCLabel.WrapAnywhere
+                    Layout.maximumWidth:    parent.width
+                    Layout.alignment:       Qt.AlignHCenter
+                }
+            }
+
+            QGCMouseArea {
+                anchors.fill: qgcVersionLayout
+
+                onClicked: {
+                    if (mouse.modifiers & Qt.ShiftModifier) {
+                        QGroundControl.corePlugin.showTouchAreas = !QGroundControl.corePlugin.showTouchAreas
+                    } else {
+                        if(!QGroundControl.corePlugin.showAdvancedUI) {
+                            advancedModeConfirmation.open()
+                        } else {
+                            QGroundControl.corePlugin.showAdvancedUI = false
+                        }
+                    }
+                }
+
+                MessageDialog {
+                    id:                 advancedModeConfirmation
+                    title:              qsTr("Advanced Mode")
+                    text:               QGroundControl.corePlugin.showAdvancedUIMessage
+                    standardButtons:    StandardButton.Yes | StandardButton.No
+                    onYes: {
+                        QGroundControl.corePlugin.showAdvancedUI = true
+                        advancedModeConfirmation.close()
+                    }
+                }
+            }
+        }
+    }
+
     //-------------------------------------------------------------------------
     /// Fly View
     FlyView {
@@ -400,15 +524,6 @@ ApplicationWindow {
         anchors.fill:   parent
         visible:        false
         source:         "AnalyzeView.qml"
-    }
-
-    //-------------------------------------------------------------------------
-    //   @brief Loader helper for any child, no matter how deep, to display elements
-    //   on top of the main window.
-    //   This is DEPRECATED. Use Popup instead.
-    Loader {
-        id: rootLoader
-        anchors.centerIn: parent
     }
 
     //-------------------------------------------------------------------------
@@ -643,21 +758,21 @@ ApplicationWindow {
     //-------------------------------------------------------------------------
     //-- Indicator Popups
 
-    function showPopUp(item, dropItem) {
-        indicatorDropdown.currentIndicator = dropItem
-        indicatorDropdown.currentItem = item
-        indicatorDropdown.open()
+    function showIndicatorPopup(item, dropItem) {
+        indicatorPopup.currentIndicator = dropItem
+        indicatorPopup.currentItem = item
+        indicatorPopup.open()
     }
 
-    function hidePopUp() {
-        indicatorDropdown.close()
-        indicatorDropdown.currentItem = null
-        indicatorDropdown.currentIndicator = null
+    function hideIndicatorPopup() {
+        indicatorPopup.close()
+        indicatorPopup.currentItem = null
+        indicatorPopup.currentIndicator = null
     }
 
     Popup {
-        id:             indicatorDropdown
-        y:              ScreenTools.defaultFontPixelHeight
+        id:             indicatorPopup
+        padding:        ScreenTools.defaultFontPixelWidth * 0.75
         modal:          true
         focus:          true
         closePolicy:    Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -671,19 +786,19 @@ ApplicationWindow {
         Loader {
             id:             loader
             onLoaded: {
-                var centerX = mainWindow.contentItem.mapFromItem(indicatorDropdown.currentItem, 0, 0).x - (loader.width * 0.5)
-                if((centerX + indicatorDropdown.width) > (mainWindow.width - ScreenTools.defaultFontPixelWidth)) {
-                    centerX = mainWindow.width - indicatorDropdown.width - ScreenTools.defaultFontPixelWidth
+                var centerX = mainWindow.contentItem.mapFromItem(indicatorPopup.currentItem, 0, 0).x - (loader.width * 0.5)
+                if((centerX + indicatorPopup.width) > (mainWindow.width - ScreenTools.defaultFontPixelWidth)) {
+                    centerX = mainWindow.width - indicatorPopup.width - ScreenTools.defaultFontPixelWidth
                 }
-                indicatorDropdown.x = centerX
+                indicatorPopup.x = centerX
             }
         }
         onOpened: {
-            loader.sourceComponent = indicatorDropdown.currentIndicator
+            loader.sourceComponent = indicatorPopup.currentIndicator
         }
         onClosed: {
             loader.sourceComponent = null
-            indicatorDropdown.currentIndicator = null
+            indicatorPopup.currentIndicator = null
         }
     }
 }

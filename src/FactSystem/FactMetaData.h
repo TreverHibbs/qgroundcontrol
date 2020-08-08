@@ -47,6 +47,8 @@ public:
     //  @return Error string for failed validation explanation to user. Empty string indicates no error.
     typedef QString (*CustomCookedValidator)(const QVariant& cookedValue);
 
+    typedef QMap<QString /* param Name */, FactMetaData*> NameToMetaDataMap_t;
+
     FactMetaData(QObject* parent = nullptr);
     FactMetaData(ValueType_t type, QObject* parent = nullptr);
     FactMetaData(ValueType_t type, const QString name, QObject* parent = nullptr);
@@ -194,6 +196,7 @@ public:
     static const int kUnknownDecimalPlaces = -1; ///< Number of decimal places to specify is not known
 
     static ValueType_t stringToType(const QString& typeString, bool& unknownType);
+    static QString typeToString(ValueType_t type);
     static size_t typeToSize(ValueType_t type);
 
     static const char* qgcFileType;
@@ -342,6 +345,9 @@ private:
 
     static const AppSettingsTranslation_s _rgAppSettingsTranslations[];
 
+    static const char*          _rgKnownTypeStrings[];
+    static const ValueType_t    _rgKnownValueTypes[];
+
     static const char* _nameJsonKey;
     static const char* _decimalPlacesJsonKey;
     static const char* _typeJsonKey;
@@ -355,6 +361,9 @@ private:
     static const char* _incrementJsonKey;
     static const char* _hasControlJsonKey;
     static const char* _qgcRebootRequiredJsonKey;
+    static const char* _categoryJsonKey;
+    static const char* _groupJsonKey;
+    static const char* _volatileJsonKey;
 
     static const char* _jsonMetaDataDefinesName;
     static const char* _jsonMetaDataFactsName;

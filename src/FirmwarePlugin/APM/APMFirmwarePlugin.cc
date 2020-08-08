@@ -702,23 +702,32 @@ bool APMFirmwarePlugin::sendHomePositionToVehicle(void)
     return true;
 }
 
-void APMFirmwarePlugin::addMetaDataToFact(QObject* parameterMetaData, Fact* fact, MAV_TYPE vehicleType)
+FactMetaData* APMFirmwarePlugin::_getMetaDataForFact(QObject* parameterMetaData, const QString& name, FactMetaData::ValueType_t type, MAV_TYPE vehicleType)
 {
     APMParameterMetaData* apmMetaData = qobject_cast<APMParameterMetaData*>(parameterMetaData);
 
     if (apmMetaData) {
-        apmMetaData->addMetaDataToFact(fact, vehicleType);
+        return apmMetaData->getMetaDataForFact(name, vehicleType, type);
     } else {
         qWarning() << "Internal error: pointer passed to APMFirmwarePlugin::addMetaDataToFact not APMParameterMetaData";
     }
+
+    return nullptr;
 }
 
-QList<MAV_CMD> APMFirmwarePlugin::supportedMissionCommands(void)
+QList<MAV_CMD> APMFirmwarePlugin::supportedMissionCommands(QGCMAVLink::VehicleClass_t vehicleClass)
 {
     return {
+#if 0
+    // Waiting for module update
+        MAV_CMD_DO_SET_REVERSE,
+#endif
+    };
+
+    QList<MAV_CMD> supportedCommands = {
         MAV_CMD_NAV_WAYPOINT,
         MAV_CMD_NAV_LOITER_UNLIM, MAV_CMD_NAV_LOITER_TURNS, MAV_CMD_NAV_LOITER_TIME,
-        MAV_CMD_NAV_RETURN_TO_LAUNCH, MAV_CMD_NAV_LAND, MAV_CMD_NAV_TAKEOFF,
+        MAV_CMD_NAV_RETURN_TO_LAUNCH,
         MAV_CMD_NAV_CONTINUE_AND_CHANGE_ALT,
         MAV_CMD_NAV_LOITER_TO_ALT,
         MAV_CMD_NAV_SPLINE_WAYPOINT,
@@ -742,36 +751,56 @@ QList<MAV_CMD> APMFirmwarePlugin::supportedMissionCommands(void)
         MAV_CMD_DO_GRIPPER,
         MAV_CMD_DO_GUIDED_LIMITS,
         MAV_CMD_DO_AUTOTUNE_ENABLE,
-        MAV_CMD_NAV_VTOL_TAKEOFF, MAV_CMD_NAV_VTOL_LAND, MAV_CMD_DO_VTOL_TRANSITION,
-#if 0
-    // Waiting for module update
-        MAV_CMD_DO_SET_REVERSE,
-#endif
     };
+
+    QList<MAV_CMD> vtolCommands = {
+        MAV_CMD_NAV_VTOL_TAKEOFF, MAV_CMD_NAV_VTOL_LAND, MAV_CMD_DO_VTOL_TRANSITION,
+    };
+
+    QList<MAV_CMD> flightCommands = {
+        MAV_CMD_NAV_LAND, MAV_CMD_NAV_TAKEOFF,
+    };
+
+    if (vehicleClass == QGCMAVLink::VehicleClassGeneric) {
+        supportedCommands   += vtolCommands;
+        supportedCommands   += flightCommands;
+    }
+    if (vehicleClass == QGCMAVLink::VehicleClassVTOL) {
+        supportedCommands += vtolCommands;
+        supportedCommands += flightCommands;
+    } else if (vehicleClass == QGCMAVLink::VehicleClassFixedWing || vehicleClass == QGCMAVLink::VehicleClassMultiRotor) {
+        supportedCommands += flightCommands;
+    }
+
+    if (qgcApp()->toolbox()->settingsManager()->planViewSettings()->useConditionGate()->rawValue().toBool()) {
+        supportedCommands.append(MAV_CMD_CONDITION_GATE);
+    }
+
+    return supportedCommands;
 }
 
-QString APMFirmwarePlugin::missionCommandOverrides(MAV_TYPE vehicleType) const
+QString APMFirmwarePlugin::missionCommandOverrides(QGCMAVLink::VehicleClass_t vehicleClass) const
 {
-    switch (vehicleType) {
-    case MAV_TYPE_GENERIC:
+    switch (vehicleClass) {
+    case QGCMAVLink::VehicleClassGeneric:
         return QStringLiteral(":/json/APM-MavCmdInfoCommon.json");
-    case MAV_TYPE_FIXED_WING:
+    case QGCMAVLink::VehicleClassFixedWing:
         return QStringLiteral(":/json/APM-MavCmdInfoFixedWing.json");
-    case MAV_TYPE_QUADROTOR:
+    case QGCMAVLink::VehicleClassMultiRotor:
         return QStringLiteral(":/json/APM-MavCmdInfoMultiRotor.json");
-    case MAV_TYPE_VTOL_QUADROTOR:
+    case QGCMAVLink::VehicleClassVTOL:
         return QStringLiteral(":/json/APM-MavCmdInfoVTOL.json");
-    case MAV_TYPE_SUBMARINE:
+    case QGCMAVLink::VehicleClassSub:
         return QStringLiteral(":/json/APM-MavCmdInfoSub.json");
-    case MAV_TYPE_GROUND_ROVER:
+    case QGCMAVLink::VehicleClassRoverBoat:
         return QStringLiteral(":/json/APM-MavCmdInfoRover.json");
     default:
-        qWarning() << "APMFirmwarePlugin::missionCommandOverrides called with bad MAV_TYPE:" << vehicleType;
+        qWarning() << "APMFirmwarePlugin::missionCommandOverrides called with bad VehicleClass_t:" << vehicleClass;
         return QString();
     }
 }
 
-QObject* APMFirmwarePlugin::loadParameterMetaData(const QString& metaDataFile)
+QObject* APMFirmwarePlugin::_loadParameterMetaData(const QString& metaDataFile)
 {
     Q_UNUSED(metaDataFile);
 
@@ -806,7 +835,7 @@ void APMFirmwarePlugin::_artooSocketError(QAbstractSocket::SocketError socketErr
     qgcApp()->showAppMessage(tr("Error during Solo video link setup: %1").arg(socketError));
 }
 
-QString APMFirmwarePlugin::internalParameterMetaDataFile(Vehicle* vehicle)
+QString APMFirmwarePlugin::_internalParameterMetaDataFile(Vehicle* vehicle)
 {
     switch (vehicle->vehicleType()) {
     case MAV_TYPE_QUADROTOR:
